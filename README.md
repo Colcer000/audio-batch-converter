@@ -6,7 +6,9 @@ A python script that converts audio files, artwork and metadata into listen-read
 How it works?
 - It scans the current folder for audio files and associated images;
 - Converts them to desired settings (format, sample rate, bitrate, channels);
-- It can convert and save artwork in a 1000x1000 png format;
+- Formatting takes the most common settings by default;
+- Supported formats: mp3, m4a, flac, ogg, opus, wav;
+- It can convert and save artwork in a 1000x1000 png/jpg format;
 - Searches MusicBrainz for the most accurate tags (replaces only album, year and genre)
 - Uses Mutagen library to modify metadata.
 - Optionally, rename the files in "Artist - Title".
