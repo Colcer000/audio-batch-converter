@@ -45,7 +45,7 @@ _mb_cache = load_mb_cache()
 mb.set_useragent(
     "Col Tags Getter",
     "1.0",
-    "1perna2312@gmail.com"
+    "coltagsgetter@example.com"
 )
 
 def main():
