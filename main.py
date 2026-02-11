@@ -460,7 +460,7 @@ def mbLookupRec(artist, title):
         result = mb.search_recordings(
             recording=title,
             artist=artist,
-            limit=5
+            limit=10
         )
     except Exception:
         print("MusicBrainz: Failed to search recordings.")
@@ -487,11 +487,15 @@ def extractMetadata(recording):
     if "release-list" in recording:
         releases = recording["release-list"]
 
-        # Prefer official albums
-        releases.sort(key=lambda r: (
-            r.get("status") != "Official",
-            r.get("primary-type") != "Album"
-        ))
+        # Filter for official albums
+        official_albums = [ r for r in releases if r.get("status") == "Official" and r.get("primary-type") == "Album"]
+
+        if official_albums:
+            # Pick the earliest release
+            official_albums.sort(key=lambda r: r.get("date", "9999-99-99"))
+            release = official_albums[0]
+        else:
+            release = releases[0]
 
         release = releases[0]
         album = release.get("title")
