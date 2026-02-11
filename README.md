@@ -1,6 +1,15 @@
 # Audio Batch Converter
 A python script that converts audio files, artwork and metadata into listen-ready formats. It uses ffmpeg for audio formatting and MusicBrainz for metadata completion.
+
 *For the script to work, make sure the audio files have artist and title in the metadata.*
+
+How it works?
+- It scans the current folder for audio files and associated images;
+- Converts them to desired settings (format, sample rate, bitrate, channels);
+- It can convert and save artwork in a 1000x1000 png format;
+- Searches MusicBrainz for the most accurate tags (replaces only album, year and genre)
+- Uses Mutagen library to modify metadata.
+- Optionally, rename the files in "Artist - Title".
 
 How to use:
 - Install ffmpeg and copy "ffmpeg.exe" in "_internal" folder (download separately);
