@@ -82,7 +82,7 @@ def main():
             if option == "0":
                 exit()
             elif option == "1":
-                output_format = getValidInput("Enter output format [mp3, flac, m4a, opus, ogg, wav, aac]: ", ac.AUDIO_FORMATS)
+                output_format = getValidInput("Enter output format [mp3, flac, m4a, opus, ogg, wav]: ", ac.AUDIO_FORMATS)
             elif option == "2":
                 sample_rate = getValidInput("Enter sample rate [8000, 11025, 16000, 22050, 32000, 44100, 48000," \
                 " 88200, 96000, 176000, 192000, 352000, 384000, 384000]: ", ac.SAMPLE_RATES)
@@ -282,14 +282,19 @@ def modifyMetadata(tag_type, audio, image_path: pl.Path, save_file: pl.Path):
         print("REPLAYGAIN: Failed to calculate.")
 
     # MusicBrainz and artwork replacement
-    recording = mbLookupRec(artist, title)
+    recording = None
+    if artist in (None, "Unknown Artist") or title in (None, "Unknown Title"):
+        print(f"MusicBrainz: Cannot search due to empty artist and title tags! Skipping {save_file.name}")
+    else:
+        recording = mbLookupRec(artist, title)
+    
+    outtag_type, out_audio = loadMutagen(save_file)
+
     if recording:
         mb_album, mb_year, mb_genre = extractMetadata(recording)
         album = mb_album or album
         year  = mb_year or year
         genre = mb_genre or genre
-
-        outtag_type, out_audio = loadMutagen(save_file)
 
         if outtag_type == "id3":
             out_audio.delall("TALB")
@@ -303,21 +308,9 @@ def modifyMetadata(tag_type, audio, image_path: pl.Path, save_file: pl.Path):
                 out_audio.add(TYER(encoding=3, text=year))
             if genre:
                 out_audio.add(TCON(encoding=3, text=genre))
-
             if rg:
                 out_audio.add(TXXX(encoding=3, desc="REPLAYGAIN_TRACK_GAIN", text=f"{gain} dB"))
                 out_audio.add(TXXX(encoding=3, desc="REPLAYGAIN_TRACK_PEAK", text=str(peak)))
-
-            if image_path.exists():
-                with open(image_path, "rb") as img:
-                    out_audio.delall("APIC")
-                    out_audio.add(APIC(
-                        encoding=3,
-                        mime="image/png",
-                        type=3,
-                        desc="Cover",
-                        data=img.read()
-                    ))
 
             out_audio.save(v2_version=3)
         elif outtag_type == "mp4":
@@ -328,9 +321,6 @@ def modifyMetadata(tag_type, audio, image_path: pl.Path, save_file: pl.Path):
             if rg:
                 audio["----:com.apple.iTunes:replaygain_track_gain"] = [f"{gain} dB".encode()]
                 audio["----:com.apple.iTunes:replaygain_track_peak"] = [str(peak).encode()]
-
-            with open(image_path, "rb") as img:
-                out_audio["covr"] = [MP4Cover(img.read(), imageformat=MP4Cover.FORMAT_PNG)]
 
             out_audio.save()
         else:
@@ -346,35 +336,58 @@ def modifyMetadata(tag_type, audio, image_path: pl.Path, save_file: pl.Path):
                 out_audio["REPLAYGAIN_TRACK_GAIN"] = f"{gain} dB"
                 out_audio["REPLAYGAIN_TRACK_PEAK"] = str(peak)
 
-            if image_path.exists():
-                if outtag_type == "flac":
-                    out_audio.clear_pictures()
-
-                    pic = Picture()
-                    pic.type = 3
-                    pic.desc = "Cover"
-                    pic.data = image_path.read_bytes()
-                    pic.mime = "image/png"
-
-                    out_audio.add_picture(pic)
-                else:
-                    with open(image_path, "rb") as img:
-                        data = img.read()
-
-                    pic = Picture()
-                    pic.type = 3
-                    pic.desc = "Cover"
-                    pic.data = data
-                    pic.mime = "image/png"
-
-                    # Base64 encoding
-                    pic_data = pic.write()
-                    enc_data = base64.b64encode(pic_data)
-                    vcomm_val = enc_data.decode("ascii")
-
-                    out_audio["metadata_block_picture"] = [vcomm_val]
-
             out_audio.save()
+
+    applyArtwork(image_path, out_audio, outtag_type)
+
+def applyArtwork(image_path: pl.Path, out_audio, tag_type):
+    if image_path.exists():
+        if tag_type == "id3":
+            with open(image_path, "rb") as img:
+                out_audio.delall("APIC")
+                out_audio.add(APIC(
+                    encoding=3,
+                    mime="image/png",
+                    type=3,
+                    desc="Cover",
+                    data=img.read()
+                ))
+            out_audio.save(v2_version=3)
+        elif tag_type == "mp4":
+            with open(image_path, "rb") as img:
+                out_audio["covr"] = [MP4Cover(img.read(), imageformat=MP4Cover.FORMAT_PNG)]
+            out_audio.save()
+        elif tag_type == "flac":
+            out_audio.clear_pictures()
+
+            pic = Picture()
+            pic.type = 3
+            pic.desc = "Cover"
+            pic.data = image_path.read_bytes()
+            pic.mime = "image/png"
+
+            out_audio.add_picture(pic)
+            out_audio.save()
+        else:
+            with open(image_path, "rb") as img:
+                data = img.read()
+
+            pic = Picture()
+            pic.type = 3
+            pic.desc = "Cover"
+            pic.data = data
+            pic.mime = "image/png"
+
+            # Base64 encoding
+            pic_data = pic.write()
+            enc_data = base64.b64encode(pic_data)
+            vcomm_val = enc_data.decode("ascii")
+
+            out_audio["metadata_block_picture"] = [vcomm_val]
+            out_audio.save()
+        return True
+    else:
+        return False
 
 def renameFiles(tag_type, audio, audio_path: pl.Path, image_path: pl.Path):
     if tag_type == "wav":
@@ -393,6 +406,10 @@ def renameFiles(tag_type, audio, audio_path: pl.Path, image_path: pl.Path):
     # Clear names from junk unsupported by os
     artist = safe_name(artist).replace(" - Topic", "")
     title  = safe_name(title)
+
+    if artist in (None, "Unknown Artist") or title in (None, "Unknown Title"):
+        print(f"FILE RENAMING: Cannot rename due to empty artist and title tags! Skipping {audio_path.name}")
+        return
 
     new_audio = audio_path.parent / f"{artist} - {title}{audio_path.suffix.lower()}"
     new_art   = image_path.parent / f"{artist} - {title}.png"
@@ -426,8 +443,6 @@ def loadMutagen(filepath: pl.Path):
     elif ext == ".ogg":
         return "ogg", OggVorbis(filepath)
     elif ext == ".m4a":
-        return "mp4", MP4(filepath)
-    elif ext == ".aac":
         return "mp4", MP4(filepath)
     elif ext == ".wav":
         return "wav", None  # skip metadata

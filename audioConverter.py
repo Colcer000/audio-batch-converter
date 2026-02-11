@@ -1,6 +1,6 @@
 import ffmpeg
 
-AUDIO_FORMATS = ["mp3", "flac", "m4a", "opus", "ogg", "wav", "aac"]
+AUDIO_FORMATS = ["mp3", "flac", "m4a", "opus", "ogg", "wav"]
 SAMPLE_RATES = [8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176000, 192000, 352000, 384000, 384000]
 BITRATES = ["64k", "96k", "128k", "192k", "256k", "320k"]
 
@@ -20,7 +20,6 @@ class AudioConverter:
                 "mp3": "libmp3lame",
                 "flac": "flac",
                 "wav": "pcm_s16le",
-                "aac": "aac",
                 "opus": "libopus",
                 "ogg": "libvorbis",
                 "m4a": "aac",
@@ -52,7 +51,7 @@ class AudioConverter:
                 "audio_bitrate": self.bitrate,
                 "loglevel": "error",
             }
-            if self.output_format in ("aac", "m4a"):
+            if self.output_format == "m4a":
                 output_kwargs.pop("b:a", None)
                 output_kwargs["q:a"] = 2  # 0 (Best) : 5 (Worst)
 
