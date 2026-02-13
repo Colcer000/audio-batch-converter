@@ -17,6 +17,7 @@ import os
 import sys
 import traceback
 
+ARTWORK_EXT = ["png", "jpg", "jpeg"]
 mb.set_useragent(
     "Col's Tags Getter",
     "1.2",
@@ -35,9 +36,8 @@ def get_ffmpeg_path():
         return os.path.join(sys._MEIPASS, "ffmpeg.exe")
     return "ffmpeg"
 
-ARTWORK_EXT = ["png", "jpg", "jpeg"]
 MB_CACHE_FILE = "mb_cache.json"
-MB_REQ_DELAY = 1.1
+MB_REQ_DELAY = 1.5
 _last_req_time = 0
 def load_mb_cache():
     if pl.Path(MB_CACHE_FILE).exists():
@@ -460,7 +460,7 @@ def mbReqRetry(func, retries=3):
             if attempt == retries - 1:
                 print(f"MusicBrainz: Failed searching after {retries} attempts: {e}")
                 return None
-            time.sleep(attempt + 1)
+            time.sleep(2 * (attempt + 1))
     return None
 
 def mbLookupRec(artist, title):
@@ -497,13 +497,30 @@ def mbLookupRec(artist, title):
         print("MusicBrainz: No record results.")
         return None
     
-    best = max(result["recording-list"],
-        key=lambda r: int(r.get("score", 0)))
+    best = max(result["recording-list"], key=scoreRecordings)
     
     _mb_cache[key] = best
     save_mb_cache(_mb_cache)
     print("MusicBrainz: Data searched and saved in cache.")
     return best
+
+def scoreRecordings(recording):
+    score = int(recording.get("score", 0))
+
+    # Bad scores go downnn
+    title = recording.get("title", "").lower()
+
+    bad_words = ["live", "remaster", "remastered", "edit", "radio edit", "version", "radio", "hits", "world tour"]
+    if any(word in title for word in bad_words):
+        score -= 20
+
+    # Good scores go uppp
+    if "release-list" in recording:
+        for rel in recording["release-list"]:
+            if rel.get("status") == "Official":
+                score += 10
+                break
+    return score
 
 def extractMetadata(recording):
     album = None
@@ -515,7 +532,8 @@ def extractMetadata(recording):
         releases = recording["release-list"]
 
         # Filter for official albums
-        official_albums = [ r for r in releases if r.get("status") == "Official" and r.get("primary-type") == "Album"]
+        official_albums = [ r for r in releases if r.get("status") == "Official"
+                           and "release-group" in r and r["release-group"].get("primary-type") == "Album"]
 
         if official_albums:
             # Pick the earliest release
@@ -524,7 +542,6 @@ def extractMetadata(recording):
         else:
             release = releases[0]
 
-        release = releases[0]
         album = release.get("title")
         date = release.get("date")
         if date:
