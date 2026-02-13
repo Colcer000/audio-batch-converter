@@ -1,3 +1,4 @@
+import time
 import audioConverter as ac
 import artworkConverter as art
 import replayGainAnalyzer as rga
@@ -16,6 +17,12 @@ import os
 import sys
 import traceback
 
+mb.set_useragent(
+    "Col's Tags Getter",
+    "1.2",
+    "coltagsgetterman@hotmail.com"
+)
+
 def handle_exception(exc_type, exc_value, exc_traceback):
     print("UNCAUGHT EXCEPTION:")
     traceback.print_exception(exc_type, exc_value, exc_traceback)
@@ -30,6 +37,8 @@ def get_ffmpeg_path():
 
 ARTWORK_EXT = ["png", "jpg", "jpeg"]
 MB_CACHE_FILE = "mb_cache.json"
+MB_REQ_DELAY = 1.1
+_last_req_time = 0
 def load_mb_cache():
     if pl.Path(MB_CACHE_FILE).exists():
         return json.loads(pl.Path(MB_CACHE_FILE).read_text(encoding="utf-8"))
@@ -40,13 +49,7 @@ def save_mb_cache(cache):
         json.dumps(cache, indent=2, ensure_ascii=False),
         encoding="utf-8"
     )
-
 _mb_cache = load_mb_cache()
-mb.set_useragent(
-    "Col Tags Getter",
-    "1.0",
-    "coltagsgetter@example.com"
-)
 
 def main():
     try:
@@ -449,21 +452,45 @@ def loadMutagen(filepath: pl.Path):
     else:
         raise ValueError(f"loadMutagen - Unsupported format: {ext}")
 
+def mbReqRetry(func, retries=3):
+    for attempt in range(retries):
+        try:
+            return func()
+        except Exception as e:
+            if attempt == retries - 1:
+                print(f"MusicBrainz: Failed searching after {retries} attempts: {e}")
+                return None
+            time.sleep(attempt + 1)
+    return None
+
 def mbLookupRec(artist, title):
+    global _last_req_time
+
     key = f"{artist.lower()}|{title.lower()}"
 
     if key in _mb_cache:
         print("MusicBrainz: Data found in cache!")
         return _mb_cache[key]
     
+    # Musicbrainz cooldown on requests
+    now = time.time()
+    elapsed = now - _last_req_time
+    if elapsed < MB_REQ_DELAY:
+        time.sleep(MB_REQ_DELAY - elapsed)
+
     try:
-        result = mb.search_recordings(
+        result = mbReqRetry(lambda: mb.search_recordings(
             recording=title,
             artist=artist,
             limit=10
-        )
-    except Exception:
-        print("MusicBrainz: Failed to search recordings.")
+        ))
+        _last_req_time = time.time()
+    except Exception as e:
+        print(f"MusicBrainz: Failed to search recordings. {e}")
+        time.sleep(3)
+        return None
+    
+    if not result:
         return None
     
     if not result["recording-list"]:
