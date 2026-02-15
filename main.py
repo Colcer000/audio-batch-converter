@@ -63,6 +63,7 @@ def main():
         file_renaming = True
         modify_metadata = True
         bypass_format = True
+        artwork_only = False
 
         while True:
             print("Settings:")
@@ -77,11 +78,12 @@ def main():
             
             print(f"(6) Convert Artwork: {convert_artwork}")
             print(f"(7) Auto File Renaming: {file_renaming}")
-            print(f"(8) Change Metadata: {modify_metadata}\n")
-            print("(9) Start Batch Conversion")
+            print(f"(8) Change Metadata: {modify_metadata}")
+            print(f"(9) Apply Artwork Only: {artwork_only}")
+            print("\n(10) Start Batch Conversion")
             print("(0) Exit\n")
 
-            option = input("Select an option to change (0-9): ")
+            option = input("Select an option to change (0-10): ")
             if option == "0":
                 exit()
             elif option == "1":
@@ -102,10 +104,12 @@ def main():
             elif option == "8":
                 modify_metadata = getValidInput("Apply metadata changes and get new ones from MusicBrainz? (y/n): ", ["y", "n"]) == "y"
             elif option == "9":
+                artwork_only = getValidInput("Apply only artwork? This means that the metadata will be unchanged, except for the picture. (y/n): ", ["y", "n"]) == "y"
+            elif option == "10":
                 bypass_format = getValidInput("Do you wish to bypass conversion? Type \"y\" if you want just metadata work. (y/n): ", ["y", "n"]) == "y"
                 settings = ac.AudioConverter(sample_rate=sample_rate, channels=channels, bitrate=bitrate,
                                             output_format=output_format, preserve_metadata=preserve_metadata)
-                batchConvert(".", settings, convert_artwork=convert_artwork, file_renaming=file_renaming, modify_metadata=modify_metadata, bypass_conversion=bypass_format)
+                batchConvert(".", settings, convert_artwork=convert_artwork, file_renaming=file_renaming, modify_metadata=modify_metadata, bypass_conversion=bypass_format, artwork_only=artwork_only)
                 print("Batch conversion finished.")
                 exit()
             else:
@@ -128,7 +132,7 @@ def exit():
     input("Press any key to exit...")
     quit()
 
-def batchConvert(dir, settings: ac, convert_artwork=False, file_renaming=False, modify_metadata=False, bypass_conversion=True):
+def batchConvert(dir, settings: ac, convert_artwork=False, file_renaming=False, modify_metadata=False, bypass_conversion=True, artwork_only=False):
     directory = pl.Path(dir).resolve()
     output_dir = pl.Path("Output")
     output_dir.mkdir(exist_ok=True)
@@ -170,6 +174,9 @@ def batchConvert(dir, settings: ac, convert_artwork=False, file_renaming=False, 
                 settings.converter(str(audio_file), str(output_file))
                 print(f"AUDIO CONVERTER: {audio_file.name} converted to {settings.output_format}")
         else:
+            if audio_file.suffix.lower() != output_file.suffix.lower():
+                print(f"So... You changed the output format, but want to bypass conversion? Do the steps again correctly...")
+                return
             if output_file.exists():
                 print(f"AUDIO CONVERTER: Skipping {audio_file.name} conversion (a similar file exists).")
             else:
@@ -203,7 +210,7 @@ def batchConvert(dir, settings: ac, convert_artwork=False, file_renaming=False, 
                     print("ARTWORK CONVERTER: Could not find the image to convert.")    
 
             if modify_metadata:
-                modifyMetadata(tag_type, audio, image_file, output_file)
+                modifyMetadata(tag_type, audio, image_file, output_file, artwork_only)
 
             if file_renaming:
                 renameFiles(tag_type, audio, output_file, image_file)
@@ -252,94 +259,95 @@ def safe_name(text, replacement=""):
         return "".join(c if c not in forbidden else replacement for c in text).strip()
 
 # METADATA MODIFIER
-def modifyMetadata(tag_type, audio, image_path: pl.Path, save_file: pl.Path):
+def modifyMetadata(tag_type, audio, image_path: pl.Path, save_file: pl.Path, artwork_only=False):
 
-    if tag_type == "wav" or save_file.suffix.lower() == ".wav":
-        print(f"METADATA MODIFIER: WAV does not support metadata. Skipping {save_file.name}")
-        return
-    elif tag_type == "id3":
-        artist = audio.get("TPE1", TPE1(encoding=3, text="Unknown Artist")).text[0]
-        title  = audio.get("TIT2", TIT2(encoding=3, text="Unknown Title")).text[0]
-        album  = audio.get("TALB", TALB(encoding=3, text="Unknown Album")).text[0]
-        date = audio.get("TDRC")
-        year = str(date.text[0]) if date else ""
-        genre = audio.get("TCON", TCON(encoding=3, text="")).text[0]
-    elif tag_type == "mp4":
-        artist = audio.get("\xa9ART", ["Unknown Artist"])[0]
-        title  = audio.get("\xa9nam", ["Unknown Title"])[0] 
-        album  = audio.get("\xa9alb", ["Unknown Album"])[0]
-        genre  = audio.get("\xa9gen", [""])[0]
-        year   = audio.get("\xa9day", [""])[0]
-    else:
-        artist = audio.get("artist", ["Unknown Artist"])[0]
-        title  = audio.get("title", ["Unknown Title"])[0]
-        album  = audio.get("album", ["Unknown Album"])[0]
-        year   = audio.get("date", [""])[0]
-        genre  = audio.get("genre", [""])[0]
+    outtag_type, out_audio = loadMutagen(save_file)
+    
+    if not artwork_only:
+        if tag_type == "wav" or save_file.suffix.lower() == ".wav":
+            print(f"METADATA MODIFIER: WAV does not support metadata. Skipping {save_file.name}")
+            return
+        elif tag_type == "id3":
+            artist = audio.get("TPE1", TPE1(encoding=3, text="Unknown Artist")).text[0]
+            title  = audio.get("TIT2", TIT2(encoding=3, text="Unknown Title")).text[0]
+            album  = audio.get("TALB", TALB(encoding=3, text="Unknown Album")).text[0]
+            date = audio.get("TDRC")
+            year = str(date.text[0]) if date else ""
+            genre = audio.get("TCON", TCON(encoding=3, text="")).text[0]
+        elif tag_type == "mp4":
+            artist = audio.get("\xa9ART", ["Unknown Artist"])[0]
+            title  = audio.get("\xa9nam", ["Unknown Title"])[0] 
+            album  = audio.get("\xa9alb", ["Unknown Album"])[0]
+            genre  = audio.get("\xa9gen", [""])[0]
+            year   = audio.get("\xa9day", [""])[0]
+        else:
+            artist = audio.get("artist", ["Unknown Artist"])[0]
+            title  = audio.get("title", ["Unknown Title"])[0]
+            album  = audio.get("album", ["Unknown Album"])[0]
+            year   = audio.get("date", [""])[0]
+            genre  = audio.get("genre", [""])[0]
 
+        # MusicBrainz and artwork replacement
+        recording = None
+        if artist in (None, "Unknown Artist") or title in (None, "Unknown Title"):
+            print(f"MusicBrainz: Cannot search due to empty artist and title tags! Skipping {save_file.name}")
+        else:
+            recording = mbLookupRec(artist, title)
+
+        if recording:
+            mb_album, mb_year, mb_genre = extractMetadata(recording)
+            album = mb_album or album
+            year  = mb_year or year
+            genre = mb_genre or genre
+
+            if outtag_type == "id3":
+                out_audio.delall("TALB")
+                out_audio.delall("TDRC")
+                out_audio.delall("TCON")
+                out_audio.delall("TXXX:REPLAYGAIN_TRACK_GAIN")
+                out_audio.delall("TXXX:REPLAYGAIN_TRACK_PEAK")
+
+                out_audio.add(TALB(encoding=3, text=album))
+                if year:
+                    out_audio.add(TYER(encoding=3, text=year))
+                if genre:
+                    out_audio.add(TCON(encoding=3, text=genre))
+                if rg:
+                    out_audio.add(TXXX(encoding=3, desc="REPLAYGAIN_TRACK_GAIN", text=f"{gain} dB"))
+                    out_audio.add(TXXX(encoding=3, desc="REPLAYGAIN_TRACK_PEAK", text=str(peak)))
+
+                out_audio.save(v2_version=3)
+            elif outtag_type == "mp4":
+                out_audio["\xa9alb"] = album
+                out_audio["\xa9gen"] = genre
+                out_audio["\xa9day"] = year
+
+                if rg:
+                    audio["----:com.apple.iTunes:replaygain_track_gain"] = [f"{gain} dB".encode()]
+                    audio["----:com.apple.iTunes:replaygain_track_peak"] = [str(peak).encode()]
+
+                out_audio.save()
+            else:
+                out_audio["artist"] = artist
+                out_audio["title"]  = title
+                out_audio["album"]  = album
+                if year:
+                    out_audio["date"] = year
+                if genre:
+                    out_audio["genre"] = genre
+
+                if rg:
+                    out_audio["REPLAYGAIN_TRACK_GAIN"] = f"{gain} dB"
+                    out_audio["REPLAYGAIN_TRACK_PEAK"] = str(peak)
+
+                out_audio.save()
+    
     # ReplayGain Calculation
     rg = rga.analyze_replaygain(save_file)
     if rg:
         gain, peak = rg
     else:
         print("REPLAYGAIN: Failed to calculate.")
-
-    # MusicBrainz and artwork replacement
-    recording = None
-    if artist in (None, "Unknown Artist") or title in (None, "Unknown Title"):
-        print(f"MusicBrainz: Cannot search due to empty artist and title tags! Skipping {save_file.name}")
-    else:
-        recording = mbLookupRec(artist, title)
-    
-    outtag_type, out_audio = loadMutagen(save_file)
-
-    if recording:
-        mb_album, mb_year, mb_genre = extractMetadata(recording)
-        album = mb_album or album
-        year  = mb_year or year
-        genre = mb_genre or genre
-
-        if outtag_type == "id3":
-            out_audio.delall("TALB")
-            out_audio.delall("TDRC")
-            out_audio.delall("TCON")
-            out_audio.delall("TXXX:REPLAYGAIN_TRACK_GAIN")
-            out_audio.delall("TXXX:REPLAYGAIN_TRACK_PEAK")
-
-            out_audio.add(TALB(encoding=3, text=album))
-            if year:
-                out_audio.add(TYER(encoding=3, text=year))
-            if genre:
-                out_audio.add(TCON(encoding=3, text=genre))
-            if rg:
-                out_audio.add(TXXX(encoding=3, desc="REPLAYGAIN_TRACK_GAIN", text=f"{gain} dB"))
-                out_audio.add(TXXX(encoding=3, desc="REPLAYGAIN_TRACK_PEAK", text=str(peak)))
-
-            out_audio.save(v2_version=3)
-        elif outtag_type == "mp4":
-            out_audio["\xa9alb"] = album
-            out_audio["\xa9gen"] = genre
-            out_audio["\xa9day"] = year
-
-            if rg:
-                audio["----:com.apple.iTunes:replaygain_track_gain"] = [f"{gain} dB".encode()]
-                audio["----:com.apple.iTunes:replaygain_track_peak"] = [str(peak).encode()]
-
-            out_audio.save()
-        else:
-            out_audio["artist"] = artist
-            out_audio["title"]  = title
-            out_audio["album"]  = album
-            if year:
-                out_audio["date"] = year
-            if genre:
-                out_audio["genre"] = genre
-
-            if rg:
-                out_audio["REPLAYGAIN_TRACK_GAIN"] = f"{gain} dB"
-                out_audio["REPLAYGAIN_TRACK_PEAK"] = str(peak)
-
-            out_audio.save()
 
     applyArtwork(image_path, out_audio, outtag_type)
 
