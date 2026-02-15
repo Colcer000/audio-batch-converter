@@ -148,18 +148,6 @@ def batchConvert(dir, settings: ac, convert_artwork=False, file_renaming=False, 
         print("AUDIO CONVERTER: No compatible audio files found to work with.")
         return []
     
-    artwork_files = []
-    for file in audio_files:
-        skip = False
-        for ext in ARTWORK_EXT:
-            searchFor = directory / (file.stem + f".{ext}")
-            if searchFor.exists():
-                artwork_files.append(searchFor)
-                skip = True
-                break
-        if not skip:
-            artwork_files.append(None)
-    
     # Convert file by file
     for i, audio_file in enumerate(audio_files, start=0):
         #Define paths for audio files
@@ -189,21 +177,33 @@ def batchConvert(dir, settings: ac, convert_artwork=False, file_renaming=False, 
             tag_type, audio = loadMutagen(audio_file)
 
             # Artwork generator
-            image_file = pl.Path(artwork_dir) / (artwork_files[i].name if artwork_files[i] else (audio_file.stem + ".png"))
-            tempart_filename = image_file.stem + "_temp" + image_file.suffix.lower()
-            tempimage_file = pl.Path(artwork_dir) / tempart_filename
+            foundimage_file = next(
+                (directory / f"{audio_file.stem}.{ext}"
+                for ext in ARTWORK_EXT
+                if (directory / f"{audio_file.stem}.{ext}").exists()),
+                None
+            )
 
-            if artwork_files[i]:
-                artwork_files[i].copy(image_file)
+            if foundimage_file:
+                foundimage_file.copy(pl.Path(artwork_dir) / foundimage_file.name)
+                print(f"ARTWORK EXTRACTOR: Found artwork for{foundimage_file.name}.")
             else:
-                if not artworkExtractor(tag_type, audio, image_file):
+                if not artworkExtractor(tag_type, audio, pl.Path(artwork_dir) / audio_file.name):
                     print("ARTWORK EXTRACTOR: Failed extracting thumbnail (might be missing)")
 
+            image_file = next(
+                (pl.Path(artwork_dir) / f"{audio_file.stem}.{ext}" for ext in ARTWORK_EXT
+                if (pl.Path(artwork_dir) / f"{audio_file.stem}.{ext}").exists()),
+                None
+            )
+            
             # Transfrom artwork in 1000x1000 PNG if selected
             if convert_artwork:
                 if image_file.exists():
+                    tempimage_file = pl.Path(artwork_dir) / f"{audio_file.stem}_temp.png"
                     art.convertArtwork(str(image_file), str(tempimage_file))
                     image_file.unlink()
+                    image_file = pl.Path(artwork_dir) / f"{audio_file.stem}.png"
                     tempimage_file.rename(image_file)
                     print(f"ARTWORK CONVERTER: Artwork {image_file.name} converted.")
                 else:
