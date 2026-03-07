@@ -188,7 +188,7 @@ def batchConvert(dir, settings: ac, convert_artwork=False, file_renaming=False, 
                 foundimage_file.copy(pl.Path(artwork_dir) / foundimage_file.name)
                 print(f"ARTWORK EXTRACTOR: Found artwork for{foundimage_file.name}.")
             else:
-                if not artworkExtractor(tag_type, audio, pl.Path(artwork_dir) / audio_file.name):
+                if not artworkExtractor(tag_type, audio, pl.Path(artwork_dir) / f"{audio_file.stem}.png"):
                     print("ARTWORK EXTRACTOR: Failed extracting thumbnail (might be missing)")
 
             image_file = next(
@@ -196,7 +196,7 @@ def batchConvert(dir, settings: ac, convert_artwork=False, file_renaming=False, 
                 if (pl.Path(artwork_dir) / f"{audio_file.stem}.{ext}").exists()),
                 None
             )
-            
+
             # Transfrom artwork in 1000x1000 PNG if selected
             if convert_artwork:
                 if image_file.exists():
@@ -207,7 +207,7 @@ def batchConvert(dir, settings: ac, convert_artwork=False, file_renaming=False, 
                     tempimage_file.rename(image_file)
                     print(f"ARTWORK CONVERTER: Artwork {image_file.name} converted.")
                 else:
-                    print("ARTWORK CONVERTER: Could not find the image to convert.")    
+                    print("ARTWORK CONVERTER: Could not find the image to convert.")
 
             if modify_metadata:
                 modifyMetadata(tag_type, audio, image_file, output_file, artwork_only)
@@ -287,6 +287,13 @@ def modifyMetadata(tag_type, audio, image_path: pl.Path, save_file: pl.Path, art
             year   = audio.get("date", [""])[0]
             genre  = audio.get("genre", [""])[0]
 
+        # ReplayGain Calculation
+        rg = rga.analyze_replaygain(save_file)
+        if rg:
+            gain, peak = rg
+        else:
+            print("REPLAYGAIN: Failed to calculate.")
+
         # MusicBrainz and artwork replacement
         recording = None
         if artist in (None, "Unknown Artist") or title in (None, "Unknown Title"):
@@ -341,13 +348,6 @@ def modifyMetadata(tag_type, audio, image_path: pl.Path, save_file: pl.Path, art
                     out_audio["REPLAYGAIN_TRACK_PEAK"] = str(peak)
 
                 out_audio.save()
-    
-    # ReplayGain Calculation
-    rg = rga.analyze_replaygain(save_file)
-    if rg:
-        gain, peak = rg
-    else:
-        print("REPLAYGAIN: Failed to calculate.")
 
     applyArtwork(image_path, out_audio, outtag_type)
 
